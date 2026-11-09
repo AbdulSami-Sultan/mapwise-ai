@@ -34,6 +34,7 @@ export interface PlaceMarker {
   address?: string;
   rating?: number;
   uri?: string;
+  savedAt?: string;
 }
 
 export interface Message {

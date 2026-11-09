@@ -15,7 +15,7 @@ import {
   GroundingMode,
   MapCoordinates,
 } from './types.ts';
-import { MessageSquare, Map as MapIcon, Bookmark } from 'lucide-react';
+import { MessageSquare, Map as MapIcon, Bookmark, MapPin } from 'lucide-react';
 
 // Default initial location: San Francisco, CA
 const INITIAL_CENTER: MapCoordinates = {
@@ -42,12 +42,75 @@ export default function App() {
   const [groundingMode, setGroundingMode] = useState<GroundingMode>('maps');
   const [activeModel, setActiveModel] = useState<string>('gemini-3.8-flash');
 
-  // Discovered places pool
+  // Discovered places pool from current chat
   const [allPlaces, setAllPlaces] = useState<PlaceMarker[]>([]);
+  
+  // Persisted saved favorite places from localStorage
+  const [savedPlaces, setSavedPlaces] = useState<PlaceMarker[]>(() => {
+    try {
+      const stored = localStorage.getItem('mapsphere_saved_places');
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      console.warn('Failed to parse saved places from localStorage:', e);
+      return [];
+    }
+  });
+
   const [isPlacesDrawerOpen, setIsPlacesDrawerOpen] = useState(false);
+  const [drawerInitialTab, setDrawerInitialTab] = useState<'discovered' | 'saved'>('discovered');
 
   // Mobile layout switcher ('chat' | 'map')
   const [mobileActiveTab, setMobileActiveTab] = useState<'chat' | 'map'>('chat');
+
+  // Save to localStorage whenever savedPlaces changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('mapsphere_saved_places', JSON.stringify(savedPlaces));
+    } catch (e) {
+      console.warn('Failed to store saved places in localStorage:', e);
+    }
+  }, [savedPlaces]);
+
+  // Combined places for pins on the interactive map
+  const mapPlaces = React.useMemo(() => {
+    const map = new Map<string, PlaceMarker>();
+    savedPlaces.forEach((p) => map.set(p.name.toLowerCase(), p));
+    allPlaces.forEach((p) => map.set(p.name.toLowerCase(), p));
+    return Array.from(map.values());
+  }, [allPlaces, savedPlaces]);
+
+  const isPlaceSaved = useCallback(
+    (placeId: string) => {
+      return savedPlaces.some(
+        (p) => p.id === placeId || p.name.toLowerCase() === placeId.toLowerCase()
+      );
+    },
+    [savedPlaces]
+  );
+
+  const handleToggleSavePlace = useCallback(
+    (place: PlaceMarker) => {
+      setSavedPlaces((prev) => {
+        const alreadySaved = prev.some(
+          (p) => p.id === place.id || p.name.toLowerCase() === place.name.toLowerCase()
+        );
+        if (alreadySaved) {
+          return prev.filter(
+            (p) => p.id !== place.id && p.name.toLowerCase() !== place.name.toLowerCase()
+          );
+        } else {
+          return [...prev, { ...place, savedAt: new Date().toISOString() }];
+        }
+      });
+    },
+    []
+  );
+
+  const handleClearSavedPlaces = useCallback(() => {
+    if (window.confirm('Are you sure you want to remove all saved favorite places?')) {
+      setSavedPlaces([]);
+    }
+  }, []);
 
   // Request browser geolocation
   const handleRequestUserLocation = useCallback(() => {
@@ -194,6 +257,16 @@ export default function App() {
     );
   };
 
+  const handleAskAboutSavedPlaces = () => {
+    if (savedPlaces.length === 0) return;
+    const names = savedPlaces.map((p) => p.name).join(', ');
+    setMobileActiveTab('chat');
+    setIsPlacesDrawerOpen(false);
+    handleSendMessage(
+      `I have saved these favorite locations: ${names}. Could you create a personalized walking tour or day itinerary connecting them with estimated times, transit/walking advice, and highlights?`
+    );
+  };
+
   const handleClearChat = () => {
     setMessages([]);
     setAllPlaces([]);
@@ -221,7 +294,7 @@ export default function App() {
             activeModel={activeModel}
             currentMapCenter={mapCenter}
             currentMapZoom={mapZoom}
-            places={allPlaces}
+            places={mapPlaces}
             onSendMessage={handleSendMessage}
             onSelectPersona={setActivePersonaId}
             onSelectGroundingMode={setGroundingMode}
@@ -229,6 +302,8 @@ export default function App() {
             onClearChat={handleClearChat}
             onSelectPlace={handleSelectPlace}
             onRequestUserLocation={handleRequestUserLocation}
+            isPlaceSaved={isPlaceSaved}
+            onToggleSavePlace={handleToggleSavePlace}
           />
         </div>
 
@@ -242,7 +317,7 @@ export default function App() {
             apiKey={apiKey}
             center={mapCenter}
             zoom={mapZoom}
-            places={allPlaces}
+            places={mapPlaces}
             selectedPlaceId={selectedPlaceId}
             userLocation={userLocation}
             onCenterChange={(newCenter, newZoom) => {
@@ -254,28 +329,68 @@ export default function App() {
             onAskAboutPlace={handleAskAboutPlace}
             onRequestUserLocation={handleRequestUserLocation}
             isLocating={isLocating}
+            isPlaceSaved={isPlaceSaved}
+            onToggleSavePlace={handleToggleSavePlace}
+            savedPlacesCount={savedPlaces.length}
+            onOpenSavedPlaces={() => {
+              setDrawerInitialTab('saved');
+              setIsPlacesDrawerOpen(true);
+            }}
           />
 
-          {/* Floating Discovered Places Toggle Button */}
-          {allPlaces.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setIsPlacesDrawerOpen(!isPlacesDrawerOpen)}
-              className="absolute top-16 right-3 z-20 bg-slate-900/90 hover:bg-slate-800 text-white backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700 shadow-xl flex items-center gap-2 text-xs font-semibold transition"
-            >
-              <Bookmark className="w-3.5 h-3.5 text-amber-400" />
-              <span>Places ({allPlaces.length})</span>
-            </button>
+          {/* Floating Discovered / Saved Places Buttons */}
+          {(allPlaces.length > 0 || savedPlaces.length > 0) && (
+            <div className="absolute top-16 right-3 z-20 flex items-center gap-1.5">
+              {allPlaces.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrawerInitialTab('discovered');
+                    setIsPlacesDrawerOpen(true);
+                  }}
+                  className="bg-slate-900/90 hover:bg-slate-800 text-white backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700 shadow-xl flex items-center gap-1.5 text-xs font-semibold transition"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Places ({allPlaces.length})</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDrawerInitialTab('saved');
+                  setIsPlacesDrawerOpen(true);
+                }}
+                className={`backdrop-blur-md px-3 py-1.5 rounded-xl border shadow-xl flex items-center gap-1.5 text-xs font-semibold transition ${
+                  savedPlaces.length > 0
+                    ? 'bg-amber-950/70 text-amber-300 border-amber-800/70 hover:bg-amber-900/80'
+                    : 'bg-slate-900/90 text-slate-300 border-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                <Bookmark
+                  className={`w-3.5 h-3.5 ${
+                    savedPlaces.length > 0 ? 'fill-amber-400 text-amber-400' : 'text-slate-400'
+                  }`}
+                />
+                <span>Saved ({savedPlaces.length})</span>
+              </button>
+            </div>
           )}
 
-          {/* Discovered Places Drawer */}
+          {/* Places & Saved Drawer */}
           <PlacesDrawer
             places={allPlaces}
+            savedPlaces={savedPlaces}
             selectedPlaceId={selectedPlaceId}
             isOpen={isPlacesDrawerOpen}
             onClose={() => setIsPlacesDrawerOpen(false)}
             onSelectPlace={handleSelectPlace}
             onAskAboutPlace={handleAskAboutPlace}
+            isPlaceSaved={isPlaceSaved}
+            onToggleSavePlace={handleToggleSavePlace}
+            onClearSavedPlaces={handleClearSavedPlaces}
+            onAskAboutSavedPlaces={handleAskAboutSavedPlaces}
+            initialTab={drawerInitialTab}
           />
         </div>
       </div>

@@ -25,6 +25,7 @@ import {
   Check,
   Star,
   Quote,
+  Bookmark,
 } from 'lucide-react';
 import { Message, PlaceMarker, RolePersonaId, GroundingMode, MapCoordinates } from '../types.ts';
 import { PERSONAS } from '../constants/personas.ts';
@@ -46,6 +47,8 @@ interface ChatPanelProps {
   onClearChat: () => void;
   onSelectPlace: (place: PlaceMarker) => void;
   onRequestUserLocation: () => void;
+  isPlaceSaved: (id: string) => boolean;
+  onToggleSavePlace: (place: PlaceMarker) => void;
 }
 
 const PERSONA_ICONS = {
@@ -70,6 +73,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   onSelectModel,
   onClearChat,
   onSelectPlace,
+  isPlaceSaved,
+  onToggleSavePlace,
 }) => {
   const [inputText, setInputText] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -392,39 +397,63 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                             <span>Locations Mentioned ({message.places.length}):</span>
                           </div>
                           <div className="grid grid-cols-1 gap-1.5">
-                            {message.places.map((place) => (
-                              <button
-                                key={place.id}
-                                type="button"
-                                onClick={() => onSelectPlace(place)}
-                                className="w-full text-left p-2 rounded-xl bg-slate-950/70 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/50 transition flex items-start justify-between gap-2 group/card"
-                              >
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-semibold text-xs text-white group-hover/card:text-sky-300">
-                                      {place.name}
-                                    </span>
-                                    <span className="text-[9px] uppercase px-1 rounded bg-slate-800 text-slate-400">
-                                      {place.category}
-                                    </span>
+                            {message.places.map((place) => {
+                              const isSaved = isPlaceSaved(place.id);
+                              return (
+                                <div
+                                  key={place.id}
+                                  onClick={() => onSelectPlace(place)}
+                                  className="w-full text-left p-2 rounded-xl bg-slate-950/70 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/50 transition flex items-start justify-between gap-2 group/card cursor-pointer"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-semibold text-xs text-white group-hover/card:text-sky-300">
+                                        {place.name}
+                                      </span>
+                                      <span className="text-[9px] uppercase px-1 rounded bg-slate-800 text-slate-400">
+                                        {place.category}
+                                      </span>
+                                      {isSaved && (
+                                        <span className="text-[9px] uppercase px-1 py-0.2 rounded bg-amber-950/60 text-amber-300 border border-amber-800/60 flex items-center gap-0.5">
+                                          <Bookmark className="w-2 h-2 fill-amber-400 text-amber-400" />
+                                          Saved
+                                        </span>
+                                      )}
+                                    </div>
+                                    {place.description && (
+                                      <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
+                                        {place.description}
+                                      </p>
+                                    )}
                                   </div>
-                                  {place.description && (
-                                    <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
-                                      {place.description}
-                                    </p>
-                                  )}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {place.rating && (
+                                      <span className="flex items-center gap-0.5 text-[10px] text-amber-400 font-semibold bg-amber-950/40 px-1 py-0.5 rounded border border-amber-800/40">
+                                        <Star className="w-2.5 h-2.5 fill-amber-400" />
+                                        {place.rating.toFixed(1)}
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onToggleSavePlace(place);
+                                      }}
+                                      className={`p-1 rounded-lg transition ${
+                                        isSaved
+                                          ? 'text-amber-400 bg-amber-950/50 hover:bg-amber-950/80 border border-amber-800/50'
+                                          : 'text-slate-400 hover:text-amber-300 hover:bg-slate-800'
+                                      }`}
+                                      title={isSaved ? 'Remove from saved' : 'Save place'}
+                                      aria-label={isSaved ? 'Remove from saved' : 'Save place'}
+                                    >
+                                      <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-amber-400' : ''}`} />
+                                    </button>
+                                    <MapPin className="w-3.5 h-3.5 text-sky-400 group-hover/card:translate-x-0.5 transition" />
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {place.rating && (
-                                    <span className="flex items-center gap-0.5 text-[10px] text-amber-400 font-semibold bg-amber-950/40 px-1 py-0.5 rounded border border-amber-800/40">
-                                      <Star className="w-2.5 h-2.5 fill-amber-400" />
-                                      {place.rating.toFixed(1)}
-                                    </span>
-                                  )}
-                                  <MapPin className="w-3.5 h-3.5 text-sky-400 group-hover/card:translate-x-0.5 transition" />
-                                </div>
-                              </button>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}

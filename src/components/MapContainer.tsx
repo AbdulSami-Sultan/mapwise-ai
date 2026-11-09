@@ -24,6 +24,7 @@ import {
   Car,
   Maximize2,
   Sparkles,
+  Bookmark,
 } from 'lucide-react';
 import { PlaceMarker, MapCoordinates } from '../types.ts';
 import { PRESET_LOCATIONS, PresetLocation } from '../constants/personas.ts';
@@ -41,6 +42,10 @@ interface MapContainerProps {
   onAskAboutPlace: (place: PlaceMarker) => void;
   onRequestUserLocation: () => void;
   isLocating?: boolean;
+  isPlaceSaved: (id: string) => boolean;
+  onToggleSavePlace: (place: PlaceMarker) => void;
+  savedPlacesCount?: number;
+  onOpenSavedPlaces?: () => void;
 }
 
 // Controller component inside APIProvider to programmatically control camera
@@ -118,6 +123,10 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   onAskAboutPlace,
   onRequestUserLocation,
   isLocating,
+  isPlaceSaved,
+  onToggleSavePlace,
+  savedPlacesCount,
+  onOpenSavedPlaces,
 }) => {
   const [searchInput, setSearchInput] = useState('');
   const [mapType, setMapType] = useState<'roadmap' | 'satellite' | 'hybrid'>('roadmap');
@@ -247,6 +256,30 @@ export const MapContainer: React.FC<MapContainerProps> = ({
             <Car className="w-4 h-4" />
             <span className="hidden md:inline">Traffic</span>
           </button>
+
+          {onOpenSavedPlaces && (
+            <>
+              <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-700" />
+              <button
+                type="button"
+                onClick={onOpenSavedPlaces}
+                title="View Saved Favorite Places"
+                className={`p-1.5 rounded-lg text-xs flex items-center gap-1 transition ${
+                  (savedPlacesCount || 0) > 0
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-medium'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Bookmark className={`w-4 h-4 ${(savedPlacesCount || 0) > 0 ? 'fill-amber-400 text-amber-400' : ''}`} />
+                <span className="hidden sm:inline">Saved</span>
+                {(savedPlacesCount || 0) > 0 && (
+                  <span className="bg-amber-500 text-slate-950 font-bold text-[10px] px-1.5 py-0.2 rounded-full">
+                    {savedPlacesCount}
+                  </span>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -303,9 +336,10 @@ export const MapContainer: React.FC<MapContainerProps> = ({
               </AdvancedMarker>
             )}
 
-            {/* AI Discovered Place Pins */}
+            {/* AI Discovered & Saved Place Pins */}
             {places.map((place) => {
               const isSelected = place.id === selectedPlaceId;
+              const isSaved = isPlaceSaved(place.id);
               const catConfig = CATEGORY_COLORS[place.category] || CATEGORY_COLORS.other;
 
               return (
@@ -313,15 +347,25 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                   key={place.id}
                   position={{ lat: place.lat, lng: place.lng }}
                   onClick={() => onSelectPlace(place)}
-                  title={place.name}
-                  zIndex={isSelected ? 100 : 10}
+                  title={`${place.name}${isSaved ? ' (Saved)' : ''}`}
+                  zIndex={isSelected ? 100 : isSaved ? 60 : 10}
                 >
-                  <Pin
-                    background={isSelected ? '#2563eb' : catConfig.bg}
-                    borderColor={isSelected ? '#ffffff' : catConfig.border}
-                    glyphColor={catConfig.glyph}
-                    scale={isSelected ? 1.3 : 1.0}
-                  />
+                  <div className="relative">
+                    <Pin
+                      background={isSelected ? '#2563eb' : isSaved ? '#d97706' : catConfig.bg}
+                      borderColor={isSelected ? '#ffffff' : isSaved ? '#fef3c7' : catConfig.border}
+                      glyphColor={isSaved ? '#fef3c7' : catConfig.glyph}
+                      scale={isSelected ? 1.3 : isSaved ? 1.15 : 1.0}
+                    />
+                    {isSaved && (
+                      <div
+                        className="absolute -top-1 -right-1.5 w-4 h-4 rounded-full bg-amber-500 border border-white text-white flex items-center justify-center shadow-md pointer-events-none"
+                        title="Saved Place"
+                      >
+                        <Bookmark className="w-2.5 h-2.5 fill-white text-white" />
+                      </div>
+                    )}
+                  </div>
                 </AdvancedMarker>
               );
             })}
@@ -333,22 +377,52 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                 onCloseClick={() => onSelectPlace(null)}
                 pixelOffset={[0, -35]}
               >
-                <div className="p-1 max-w-[260px] text-slate-900">
+                <div className="p-1 max-w-[270px] text-slate-900">
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                        {selectedPlace.category}
-                      </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                          {selectedPlace.category}
+                        </span>
+                        {isPlaceSaved(selectedPlace.id) && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex items-center gap-0.5 border border-amber-200">
+                            <Bookmark className="w-2.5 h-2.5 fill-amber-600 text-amber-600" />
+                            Saved
+                          </span>
+                        )}
+                      </div>
                       <h4 className="font-bold text-sm text-slate-900 mt-1 leading-tight">
                         {selectedPlace.name}
                       </h4>
                     </div>
-                    {selectedPlace.rating && (
-                      <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-amber-700 text-xs font-semibold shrink-0">
-                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                        <span>{selectedPlace.rating.toFixed(1)}</span>
-                      </div>
-                    )}
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {selectedPlace.rating && (
+                        <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-amber-700 text-xs font-semibold">
+                          <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                          <span>{selectedPlace.rating.toFixed(1)}</span>
+                        </div>
+                      )}
+
+                      {/* Bookmark Toggle in InfoWindow Header */}
+                      <button
+                        type="button"
+                        onClick={() => onToggleSavePlace(selectedPlace)}
+                        className={`p-1 rounded-lg border transition ${
+                          isPlaceSaved(selectedPlace.id)
+                            ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:text-amber-600 hover:bg-amber-50'
+                        }`}
+                        title={isPlaceSaved(selectedPlace.id) ? 'Remove from saved' : 'Save place'}
+                        aria-label={isPlaceSaved(selectedPlace.id) ? 'Remove from saved' : 'Save place'}
+                      >
+                        <Bookmark
+                          className={`w-3.5 h-3.5 ${
+                            isPlaceSaved(selectedPlace.id) ? 'fill-amber-600 text-amber-600' : ''
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
 
                   {selectedPlace.address && (
@@ -372,17 +446,36 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                       Ask AI about this
                     </button>
 
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                        selectedPlace.name + ' ' + (selectedPlace.address || '')
-                      )}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition"
-                      title="Open in Google Maps"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onToggleSavePlace(selectedPlace)}
+                        className={`text-xs font-medium flex items-center gap-1 px-2 py-1 rounded transition ${
+                          isPlaceSaved(selectedPlace.id)
+                            ? 'text-amber-800 bg-amber-50 hover:bg-amber-100'
+                            : 'text-slate-600 bg-slate-50 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Bookmark
+                          className={`w-3 h-3 ${
+                            isPlaceSaved(selectedPlace.id) ? 'fill-amber-600 text-amber-600' : ''
+                          }`}
+                        />
+                        <span>{isPlaceSaved(selectedPlace.id) ? 'Saved' : 'Save'}</span>
+                      </button>
+
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                          selectedPlace.name + ' ' + (selectedPlace.address || '')
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition"
+                        title="Open in Google Maps"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
                   </div>
                 </div>
               </InfoWindow>
