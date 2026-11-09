@@ -390,6 +390,7 @@ export default function App() {
             onToggleSavePlace={handleToggleSavePlace}
             onClearSavedPlaces={handleClearSavedPlaces}
             onAskAboutSavedPlaces={handleAskAboutSavedPlaces}
+            onReorderSavedPlaces={setSavedPlaces}
             initialTab={drawerInitialTab}
           />
         </div>

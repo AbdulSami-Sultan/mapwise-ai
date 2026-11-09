@@ -24,6 +24,16 @@ export interface GroundingSource {
   snippet?: string;
 }
 
+export interface WeatherCondition {
+  temperatureC: number;
+  temperatureF: number;
+  weatherCode: number;
+  label: string;
+  emoji: string;
+  isDay: boolean;
+  timestamp: number;
+}
+
 export interface PlaceMarker {
   id: string;
   name: string;
@@ -35,6 +45,7 @@ export interface PlaceMarker {
   rating?: number;
   uri?: string;
   savedAt?: string;
+  weather?: WeatherCondition;
 }
 
 export interface Message {
@@ -63,3 +74,28 @@ export interface MapState {
   mapTypeId?: 'roadmap' | 'satellite' | 'hybrid' | 'terrain';
   showTraffic?: boolean;
 }
+
+export type TravelMode = 'DRIVE' | 'WALK' | 'BICYCLE' | 'TRANSIT';
+
+export interface RouteSegment {
+  fromPlaceId: string;
+  toPlaceId: string;
+  fromName: string;
+  toName: string;
+  durationSeconds: number;
+  durationText: string;
+  distanceMeters: number;
+  distanceText: string;
+  condition?: string;
+}
+
+export interface DistanceMatrixResult {
+  travelMode: TravelMode;
+  segments: RouteSegment[];
+  totalDurationSeconds: number;
+  totalDurationText: string;
+  totalDistanceMeters: number;
+  totalDistanceText: string;
+  count: number;
+}
+

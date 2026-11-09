@@ -25,9 +25,15 @@ import {
   Maximize2,
   Sparkles,
   Bookmark,
+  CloudSun,
+  Thermometer,
 } from 'lucide-react';
-import { PlaceMarker, MapCoordinates } from '../types.ts';
+import { PlaceMarker, MapCoordinates, WeatherCondition } from '../types.ts';
 import { PRESET_LOCATIONS, PresetLocation } from '../constants/personas.ts';
+import {
+  fetchWeatherForCoordinates,
+  fetchWeatherForPlaces,
+} from '../services/weatherService.ts';
 
 interface MapContainerProps {
   apiKey: string;
@@ -134,7 +140,44 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   const [currentCenter, setCurrentCenter] = useState<MapCoordinates>(center);
   const [currentZoom, setCurrentZoom] = useState<number>(zoom);
 
+  // Weather overlay state
+  const [placeWeatherMap, setPlaceWeatherMap] = useState<Record<string, WeatherCondition>>({});
+  const [regionWeather, setRegionWeather] = useState<WeatherCondition | null>(null);
+  const [showWeatherOverlay, setShowWeatherOverlay] = useState(true);
+  const [temperatureUnit, setTemperatureUnit] = useState<'C' | 'F'>('C');
+
+  // Fetch weather for all currently viewed places
+  useEffect(() => {
+    let isMounted = true;
+    if (places.length === 0) return;
+
+    fetchWeatherForPlaces(places).then((results) => {
+      if (isMounted) {
+        setPlaceWeatherMap((prev) => ({ ...prev, ...results }));
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [places]);
+
+  // Fetch weather for the currently viewed region / map center
+  useEffect(() => {
+    let isMounted = true;
+    fetchWeatherForCoordinates(currentCenter.lat, currentCenter.lng).then((res) => {
+      if (isMounted && res) {
+        setRegionWeather(res);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentCenter.lat, currentCenter.lng]);
+
   const selectedPlace = places.find((p) => p.id === selectedPlaceId) || null;
+  const selectedPlaceWeather = selectedPlace ? placeWeatherMap[selectedPlace.id] : null;
 
   // Handle camera idle
   const handleCameraChange = useCallback(
@@ -257,6 +300,41 @@ export const MapContainer: React.FC<MapContainerProps> = ({
             <span className="hidden md:inline">Traffic</span>
           </button>
 
+          <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-700" />
+
+          {/* Weather Overlay Toggle & Region Display */}
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={() => setShowWeatherOverlay(!showWeatherOverlay)}
+              title={showWeatherOverlay ? 'Hide weather badges on markers' : 'Show weather badges on markers'}
+              className={`p-1.5 rounded-l-lg text-xs flex items-center gap-1.5 transition ${
+                showWeatherOverlay
+                  ? 'bg-sky-500/20 text-sky-300 font-medium'
+                  : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <CloudSun className="w-4 h-4 text-sky-400" />
+              {regionWeather && (
+                <span className="hidden sm:inline text-[11px] font-semibold text-slate-200">
+                  {regionWeather.emoji}{' '}
+                  {temperatureUnit === 'C'
+                    ? `${regionWeather.temperatureC}°C`
+                    : `${regionWeather.temperatureF}°F`}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTemperatureUnit(temperatureUnit === 'C' ? 'F' : 'C')}
+              title="Switch between Celsius and Fahrenheit"
+              className="p-1.5 rounded-r-lg text-[10px] font-bold text-slate-400 hover:text-white hover:bg-slate-800 border-l border-slate-200 dark:border-slate-700 transition"
+            >
+              °{temperatureUnit}
+            </button>
+          </div>
+
           {onOpenSavedPlaces && (
             <>
               <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-700" />
@@ -341,30 +419,51 @@ export const MapContainer: React.FC<MapContainerProps> = ({
               const isSelected = place.id === selectedPlaceId;
               const isSaved = isPlaceSaved(place.id);
               const catConfig = CATEGORY_COLORS[place.category] || CATEGORY_COLORS.other;
+              const placeWeather = placeWeatherMap[place.id];
 
               return (
                 <AdvancedMarker
                   key={place.id}
                   position={{ lat: place.lat, lng: place.lng }}
                   onClick={() => onSelectPlace(place)}
-                  title={`${place.name}${isSaved ? ' (Saved)' : ''}`}
+                  title={`${place.name}${isSaved ? ' (Saved)' : ''}${
+                    placeWeather
+                      ? ` • ${temperatureUnit === 'C' ? `${placeWeather.temperatureC}°C` : `${placeWeather.temperatureF}°F`}, ${placeWeather.label}`
+                      : ''
+                  }`}
                   zIndex={isSelected ? 100 : isSaved ? 60 : 10}
                 >
-                  <div className="relative">
-                    <Pin
-                      background={isSelected ? '#2563eb' : isSaved ? '#d97706' : catConfig.bg}
-                      borderColor={isSelected ? '#ffffff' : isSaved ? '#fef3c7' : catConfig.border}
-                      glyphColor={isSaved ? '#fef3c7' : catConfig.glyph}
-                      scale={isSelected ? 1.3 : isSaved ? 1.15 : 1.0}
-                    />
-                    {isSaved && (
-                      <div
-                        className="absolute -top-1 -right-1.5 w-4 h-4 rounded-full bg-amber-500 border border-white text-white flex items-center justify-center shadow-md pointer-events-none"
-                        title="Saved Place"
-                      >
-                        <Bookmark className="w-2.5 h-2.5 fill-white text-white" />
+                  <div className="relative flex flex-col items-center group">
+                    {/* Floating Weather Pill Overlay */}
+                    {showWeatherOverlay && placeWeather && (
+                      <div className="mb-1 bg-slate-900/90 text-slate-100 backdrop-blur-md px-1.5 py-0.5 rounded-full text-[10px] font-semibold border border-slate-700/80 shadow-md flex items-center gap-1 pointer-events-none select-none whitespace-nowrap transition-transform duration-150 group-hover:scale-110">
+                        <span className="text-[11px] leading-none" role="img" aria-label={placeWeather.label}>
+                          {placeWeather.emoji}
+                        </span>
+                        <span className="leading-none text-slate-100">
+                          {temperatureUnit === 'C'
+                            ? `${placeWeather.temperatureC}°`
+                            : `${placeWeather.temperatureF}°`}
+                        </span>
                       </div>
                     )}
+
+                    <div className="relative">
+                      <Pin
+                        background={isSelected ? '#2563eb' : isSaved ? '#d97706' : catConfig.bg}
+                        borderColor={isSelected ? '#ffffff' : isSaved ? '#fef3c7' : catConfig.border}
+                        glyphColor={isSaved ? '#fef3c7' : catConfig.glyph}
+                        scale={isSelected ? 1.3 : isSaved ? 1.15 : 1.0}
+                      />
+                      {isSaved && (
+                        <div
+                          className="absolute -top-1 -right-1.5 w-4 h-4 rounded-full bg-amber-500 border border-white text-white flex items-center justify-center shadow-md pointer-events-none"
+                          title="Saved Place"
+                        >
+                          <Bookmark className="w-2.5 h-2.5 fill-white text-white" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </AdvancedMarker>
               );
@@ -430,6 +529,35 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                       <MapPin className="w-3 h-3 shrink-0 text-slate-400" />
                       <span className="truncate">{selectedPlace.address}</span>
                     </p>
+                  )}
+
+                  {/* Weather Info in InfoWindow */}
+                  {selectedPlaceWeather && (
+                    <div className="mt-2 px-2 py-1.5 rounded-lg bg-sky-50 border border-sky-100 flex items-center justify-between text-xs text-sky-950">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base" role="img" aria-label={selectedPlaceWeather.label}>
+                          {selectedPlaceWeather.emoji}
+                        </span>
+                        <div className="flex items-center gap-1 leading-tight">
+                          <span className="font-bold text-sky-950">
+                            {temperatureUnit === 'C'
+                              ? `${selectedPlaceWeather.temperatureC}°C`
+                              : `${selectedPlaceWeather.temperatureF}°F`}
+                          </span>
+                          <span className="text-[11px] text-sky-700 font-medium">
+                            • {selectedPlaceWeather.label}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setTemperatureUnit(temperatureUnit === 'C' ? 'F' : 'C')}
+                        className="text-[10px] font-semibold text-sky-700 hover:text-sky-900 bg-sky-100/70 hover:bg-sky-200/70 px-1.5 py-0.5 rounded transition"
+                        title="Toggle temperature unit"
+                      >
+                        °{temperatureUnit === 'C' ? 'F' : 'C'}
+                      </button>
+                    </div>
                   )}
 
                   <p className="text-xs text-slate-600 mt-1.5 leading-snug line-clamp-3">
