@@ -25,7 +25,14 @@ import {
   ChevronDown,
   RefreshCw,
   Navigation,
+  CalendarPlus,
+  FileDown,
+  Check,
 } from 'lucide-react';
+import {
+  exportItineraryToCalendar,
+  exportItineraryToPdf,
+} from '../services/itineraryExportService.ts';
 
 interface PlacesDrawerProps {
   places: PlaceMarker[];
@@ -73,6 +80,21 @@ export const PlacesDrawer: React.FC<PlacesDrawerProps> = ({
   const [matrixResult, setMatrixResult] = useState<DistanceMatrixResult | null>(null);
   const [isCalculatingTimes, setIsCalculatingTimes] = useState(false);
   const [matrixError, setMatrixError] = useState<string | null>(null);
+  const [exportedType, setExportedType] = useState<'ics' | 'pdf' | null>(null);
+
+  const handleExportCalendar = () => {
+    if (savedPlaces.length === 0) return;
+    exportItineraryToCalendar(savedPlaces, travelMode, matrixResult);
+    setExportedType('ics');
+    setTimeout(() => setExportedType((prev) => (prev === 'ics' ? null : prev)), 2500);
+  };
+
+  const handleExportPdf = () => {
+    if (savedPlaces.length === 0) return;
+    exportItineraryToPdf(savedPlaces, travelMode, matrixResult);
+    setExportedType('pdf');
+    setTimeout(() => setExportedType((prev) => (prev === 'pdf' ? null : prev)), 2500);
+  };
 
   // Sync initial tab when changed externally
   useEffect(() => {
@@ -519,6 +541,47 @@ export const PlacesDrawer: React.FC<PlacesDrawerProps> = ({
               💡 Save at least 2 places to calculate travel times between them.
             </p>
           )}
+
+          {/* Export Itinerary Controls: Calendar (.ics) & PDF */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={handleExportCalendar}
+              title="Download an .ics calendar itinerary for your saved stops"
+              className="py-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-medium text-[11px] flex items-center justify-center gap-1.5 transition"
+            >
+              {exportedType === 'ics' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="text-emerald-300 truncate">Exported .ics</span>
+                </>
+              ) : (
+                <>
+                  <CalendarPlus className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span className="truncate">Export to Calendar</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              title="Download a formatted PDF itinerary of your saved places"
+              className="py-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-medium text-[11px] flex items-center justify-center gap-1.5 transition"
+            >
+              {exportedType === 'pdf' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="text-emerald-300 truncate">Saved PDF</span>
+                </>
+              ) : (
+                <>
+                  <FileDown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="truncate">Save as PDF</span>
+                </>
+              )}
+            </button>
+          </div>
 
           {onAskAboutSavedPlaces && (
             <button
