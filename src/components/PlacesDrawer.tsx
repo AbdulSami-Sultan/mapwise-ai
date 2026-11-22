@@ -4,7 +4,13 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { PlaceMarker, TravelMode, DistanceMatrixResult } from '../types.ts';
+import {
+  PlaceMarker,
+  TravelMode,
+  DistanceMatrixResult,
+  MapCoordinates,
+  ActiveDirectionsDisplay,
+} from '../types.ts';
 import {
   MapPin,
   Star,
@@ -33,6 +39,7 @@ import {
   exportItineraryToCalendar,
   exportItineraryToPdf,
 } from '../services/itineraryExportService.ts';
+import { DirectionsPanel } from './DirectionsPanel.tsx';
 
 interface PlacesDrawerProps {
   places: PlaceMarker[];
@@ -48,6 +55,12 @@ interface PlacesDrawerProps {
   onAskAboutSavedPlaces?: () => void;
   onReorderSavedPlaces?: (newOrder: PlaceMarker[]) => void;
   initialTab?: 'discovered' | 'saved';
+  userLocation: MapCoordinates | null;
+  mapCenter: MapCoordinates;
+  isLocating: boolean;
+  locationError: string | null;
+  onRequestUserLocation: () => void;
+  onSelectActiveDirections: (display: ActiveDirectionsDisplay | null) => void;
 }
 
 const TRAVEL_MODES: Array<{ id: TravelMode; label: string; icon: React.ElementType }> = [
@@ -71,16 +84,28 @@ export const PlacesDrawer: React.FC<PlacesDrawerProps> = ({
   onAskAboutSavedPlaces,
   onReorderSavedPlaces,
   initialTab = 'discovered',
+  userLocation,
+  mapCenter,
+  isLocating,
+  locationError,
+  onRequestUserLocation,
+  onSelectActiveDirections,
 }) => {
   const [activeTab, setActiveTab] = useState<'discovered' | 'saved'>(initialTab);
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [travelMode, setTravelMode] = useState<TravelMode>('DRIVE');
+  const [directionsPlace, setDirectionsPlace] = useState<PlaceMarker | null>(null);
 
   // Travel time calculation state (Distance Matrix)
   const [matrixResult, setMatrixResult] = useState<DistanceMatrixResult | null>(null);
   const [isCalculatingTimes, setIsCalculatingTimes] = useState(false);
   const [matrixError, setMatrixError] = useState<string | null>(null);
   const [exportedType, setExportedType] = useState<'ics' | 'pdf' | null>(null);
+
+  const handleOpenDirections = (place: PlaceMarker) => {
+    setDirectionsPlace(place);
+    onSelectPlace(place);
+  };
 
   const handleExportCalendar = () => {
     if (savedPlaces.length === 0) return;
@@ -198,29 +223,51 @@ export const PlacesDrawer: React.FC<PlacesDrawerProps> = ({
     <div className="absolute right-0 top-0 bottom-0 w-88 max-w-full bg-slate-900/95 backdrop-blur-xl border-l border-slate-800 shadow-2xl z-40 flex flex-col transition-all animate-in slide-in-from-right duration-200">
       {/* Top Header */}
       <div className="p-3 border-b border-slate-800 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {activeTab === 'saved' ? (
-            <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400" />
+        <div className="flex items-center gap-2 min-w-0">
+          {directionsPlace ? (
+            <>
+              <Navigation className="w-4 h-4 text-sky-400 shrink-0" />
+              <h3 className="font-bold text-sm text-white truncate">Get Directions</h3>
+            </>
           ) : (
-            <MapPin className="w-4 h-4 text-emerald-400" />
+            <>
+              {activeTab === 'saved' ? (
+                <Bookmark className="w-4 h-4 text-amber-400 fill-amber-400" />
+              ) : (
+                <MapPin className="w-4 h-4 text-emerald-400" />
+              )}
+              <h3 className="font-bold text-sm text-white">
+                {activeTab === 'saved' ? 'Saved Places' : 'Discovered Places'}
+              </h3>
+              <span className="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-semibold">
+                {activePlacesList.length}
+              </span>
+            </>
           )}
-          <h3 className="font-bold text-sm text-white">
-            {activeTab === 'saved' ? 'Saved Places' : 'Discovered Places'}
-          </h3>
-          <span className="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-semibold">
-            {activePlacesList.length}
-          </span>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition shrink-0"
           aria-label="Close drawer"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
+      {directionsPlace ? (
+        <DirectionsPanel
+          destination={directionsPlace}
+          userLocation={userLocation}
+          mapCenter={mapCenter}
+          isLocating={isLocating}
+          locationError={locationError}
+          onRequestUserLocation={onRequestUserLocation}
+          onBack={() => setDirectionsPlace(null)}
+          onSelectActiveRoute={onSelectActiveDirections}
+        />
+      ) : (
+        <>
       {/* Tabs Switcher: Discovered vs Saved */}
       <div className="p-2 border-b border-slate-800 grid grid-cols-2 gap-1 bg-slate-950/60">
         <button
@@ -485,18 +532,35 @@ export const PlacesDrawer: React.FC<PlacesDrawerProps> = ({
                     {place.description}
                   </p>
 
-                  <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAskAboutPlace(place);
-                      }}
-                      className="text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium"
-                    >
-                      <MessageSquare className="w-3 h-3" />
-                      Ask AI about this
-                    </button>
+                  <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1.5 text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {activeTab === 'saved' && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenDirections(place);
+                          }}
+                          className="text-emerald-300 hover:text-emerald-200 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 px-2 py-1 rounded-lg flex items-center gap-1 font-semibold text-[11px] transition"
+                          title="Get walking, transit, and driving directions from your location"
+                        >
+                          <Navigation className="w-3 h-3" />
+                          <span>Get Directions</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAskAboutPlace(place);
+                        }}
+                        className="text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium text-[11px]"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        <span>Ask AI</span>
+                      </button>
+                    </div>
 
                     <a
                       href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -505,7 +569,7 @@ export const PlacesDrawer: React.FC<PlacesDrawerProps> = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="text-slate-400 hover:text-slate-200 p-1 rounded hover:bg-slate-800"
+                      className="text-slate-400 hover:text-slate-200 p-1 rounded hover:bg-slate-800 shrink-0"
                       title="View on Google Maps"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
@@ -605,6 +669,8 @@ export const PlacesDrawer: React.FC<PlacesDrawerProps> = ({
             </button>
           )}
         </div>
+      )}
+        </>
       )}
     </div>
   );

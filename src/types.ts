@@ -99,3 +99,66 @@ export interface DistanceMatrixResult {
   count: number;
 }
 
+export type DirectionTravelMode = 'DRIVE' | 'WALK' | 'TRANSIT';
+
+export interface TransitStepDetails {
+  lineName?: string;
+  lineShortName?: string;
+  vehicleType?: string;
+  vehicleColor?: string;
+  textColor?: string;
+  departureStop?: string;
+  arrivalStop?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  stopCount?: number;
+  headsign?: string;
+}
+
+export interface DirectionStep {
+  instruction: string;
+  maneuver?: string;
+  distanceMeters: number;
+  distanceText: string;
+  durationSeconds: number;
+  durationText: string;
+  travelMode?: string;
+  transitDetails?: TransitStepDetails;
+}
+
+export interface DirectionRouteOption {
+  index: number;
+  summary: string;
+  durationSeconds: number;
+  durationText: string;
+  distanceMeters: number;
+  distanceText: string;
+  encodedPolyline: string;
+  steps: DirectionStep[];
+  viewport?: {
+    low: MapCoordinates;
+    high: MapCoordinates;
+  };
+}
+
+export interface DirectionsModeResult {
+  travelMode: DirectionTravelMode;
+  routes: DirectionRouteOption[];
+  error?: string;
+}
+
+export interface MultiModeDirectionsResponse {
+  origin: MapCoordinates;
+  destination: MapCoordinates;
+  modes: Record<DirectionTravelMode, DirectionsModeResult>;
+}
+
+export interface ActiveDirectionsDisplay {
+  origin: MapCoordinates;
+  originLabel: string;
+  destination: PlaceMarker;
+  travelMode: DirectionTravelMode;
+  route: DirectionRouteOption;
+}
+
+

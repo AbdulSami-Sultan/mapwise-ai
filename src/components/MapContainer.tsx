@@ -27,8 +27,16 @@ import {
   Bookmark,
   CloudSun,
   Thermometer,
+  X,
+  Footprints,
+  Bus,
 } from 'lucide-react';
-import { PlaceMarker, MapCoordinates, WeatherCondition } from '../types.ts';
+import {
+  PlaceMarker,
+  MapCoordinates,
+  WeatherCondition,
+  ActiveDirectionsDisplay,
+} from '../types.ts';
 import { PRESET_LOCATIONS, PresetLocation } from '../constants/personas.ts';
 import {
   fetchWeatherForCoordinates,
@@ -52,6 +60,45 @@ interface MapContainerProps {
   onToggleSavePlace: (place: PlaceMarker) => void;
   savedPlacesCount?: number;
   onOpenSavedPlaces?: () => void;
+  activeDirections?: ActiveDirectionsDisplay | null;
+  onClearDirections?: () => void;
+}
+
+/**
+ * Decodes a Google Encoded Polyline string into an array of LatLng literals.
+ */
+function decodeEncodedPolyline(encoded: string): google.maps.LatLngLiteral[] {
+  const path: google.maps.LatLngLiteral[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    const dlat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    const dlng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    path.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+
+  return path;
 }
 
 // Controller component inside APIProvider to programmatically control camera
@@ -59,22 +106,104 @@ const MapCameraController: React.FC<{
   center: MapCoordinates;
   zoom: number;
   selectedPlace?: PlaceMarker | null;
-}> = ({ center, zoom, selectedPlace }) => {
+  hasActiveDirections?: boolean;
+}> = ({ center, zoom, selectedPlace, hasActiveDirections }) => {
   const map = useMap();
 
   useEffect(() => {
-    if (!map) return;
+    if (!map || hasActiveDirections) return;
     map.panTo({ lat: center.lat, lng: center.lng });
     map.setZoom(zoom);
-  }, [map, center.lat, center.lng, zoom]);
+  }, [map, center.lat, center.lng, zoom, hasActiveDirections]);
 
   useEffect(() => {
-    if (!map || !selectedPlace) return;
+    if (!map || !selectedPlace || hasActiveDirections) return;
     map.panTo({ lat: selectedPlace.lat, lng: selectedPlace.lng });
     if (map.getZoom()! < 15) {
       map.setZoom(15);
     }
-  }, [map, selectedPlace]);
+  }, [map, selectedPlace, hasActiveDirections]);
+
+  return null;
+};
+
+// Directions polyline overlay rendered from Routes API computeRoutes encodedPolyline
+const DirectionsPolylineOverlay: React.FC<{
+  activeDirections?: ActiveDirectionsDisplay | null;
+}> = ({ activeDirections }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || typeof google === 'undefined' || !activeDirections?.route?.encodedPolyline) {
+      return;
+    }
+
+    const path = decodeEncodedPolyline(activeDirections.route.encodedPolyline);
+    if (path.length === 0) return;
+
+    const mode = activeDirections.travelMode;
+    const isWalking = mode === 'WALK';
+    const primaryColor =
+      mode === 'TRANSIT' ? '#a855f7' : mode === 'WALK' ? '#10b981' : '#38bdf8';
+
+    // Dark outer casing for crisp legibility on both roadmap and satellite views
+    const casingPolyline = new google.maps.Polyline({
+      path,
+      geodesic: true,
+      strokeColor: '#0f172a',
+      strokeOpacity: isWalking ? 0.35 : 0.75,
+      strokeWeight: isWalking ? 7 : 9,
+      zIndex: 40,
+      map,
+    });
+
+    const routePolyline = new google.maps.Polyline({
+      path,
+      geodesic: true,
+      strokeColor: primaryColor,
+      strokeOpacity: isWalking ? 0 : 0.95,
+      strokeWeight: isWalking ? 5 : 5.5,
+      icons: isWalking
+        ? [
+            {
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                fillColor: primaryColor,
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 1.5,
+                scale: 3.5,
+              },
+              offset: '0',
+              repeat: '14px',
+            },
+          ]
+        : undefined,
+      zIndex: 45,
+      map,
+    });
+
+    // Fit map bounds smoothly to display origin, destination, and route
+    const bounds = new google.maps.LatLngBounds();
+    if (activeDirections.route.viewport) {
+      bounds.extend(activeDirections.route.viewport.low);
+      bounds.extend(activeDirections.route.viewport.high);
+    } else {
+      path.forEach((pt) => bounds.extend(pt));
+    }
+    bounds.extend(activeDirections.origin);
+    bounds.extend({
+      lat: activeDirections.destination.lat,
+      lng: activeDirections.destination.lng,
+    });
+
+    map.fitBounds(bounds, { top: 90, right: 380, bottom: 90, left: 60 });
+
+    return () => {
+      casingPolyline.setMap(null);
+      routePolyline.setMap(null);
+    };
+  }, [map, activeDirections]);
 
   return null;
 };
@@ -133,6 +262,8 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   onToggleSavePlace,
   savedPlacesCount,
   onOpenSavedPlaces,
+  activeDirections,
+  onClearDirections,
 }) => {
   const [searchInput, setSearchInput] = useState('');
   const [mapType, setMapType] = useState<'roadmap' | 'satellite' | 'hybrid'>('roadmap');
@@ -399,7 +530,15 @@ export const MapContainer: React.FC<MapContainerProps> = ({
             fullscreenControl={false}
           >
             {/* Camera Sync Controller */}
-            <MapCameraController center={center} zoom={zoom} selectedPlace={selectedPlace} />
+            <MapCameraController
+              center={center}
+              zoom={zoom}
+              selectedPlace={selectedPlace}
+              hasActiveDirections={!!activeDirections}
+            />
+
+            {/* Active Directions Polyline */}
+            <DirectionsPolylineOverlay activeDirections={activeDirections} />
 
             {/* Live Traffic Layer */}
             <TrafficLayerComponent showTraffic={showTraffic} />
@@ -413,6 +552,28 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                 </div>
               </AdvancedMarker>
             )}
+
+            {/* Directions Origin Pin (when origin differs from live GPS userLocation) */}
+            {activeDirections &&
+              (!userLocation ||
+                Math.abs(userLocation.lat - activeDirections.origin.lat) > 0.0002 ||
+                Math.abs(userLocation.lng - activeDirections.origin.lng) > 0.0002) && (
+                <AdvancedMarker
+                  position={{
+                    lat: activeDirections.origin.lat,
+                    lng: activeDirections.origin.lng,
+                  }}
+                  title={`Start: ${activeDirections.originLabel}`}
+                  zIndex={90}
+                >
+                  <div className="flex flex-col items-center">
+                    <div className="mb-1 px-2 py-0.5 rounded-full bg-slate-900/95 text-emerald-300 border border-emerald-500/60 text-[10px] font-bold shadow-lg whitespace-nowrap">
+                      Start
+                    </div>
+                    <div className="w-4 h-4 rounded-full bg-emerald-500 border-2 border-white shadow-lg" />
+                  </div>
+                </AdvancedMarker>
+              )}
 
             {/* AI Discovered & Saved Place Pins */}
             {places.map((place) => {
@@ -611,6 +772,52 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           </Map>
         </APIProvider>
       </div>
+
+      {/* Active Directions Route Banner */}
+      {activeDirections && (
+        <div className="absolute bottom-16 left-3 z-20 max-w-xs sm:max-w-sm bg-slate-900/95 backdrop-blur-xl text-white border border-sky-500/40 rounded-2xl shadow-2xl px-3 py-2 flex items-center gap-2.5">
+          <div
+            className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+              activeDirections.travelMode === 'TRANSIT'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                : activeDirections.travelMode === 'WALK'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+            }`}
+          >
+            {activeDirections.travelMode === 'TRANSIT' ? (
+              <Bus className="w-4 h-4" />
+            ) : activeDirections.travelMode === 'WALK' ? (
+              <Footprints className="w-4 h-4" />
+            ) : (
+              <Car className="w-4 h-4" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-bold text-white truncate">
+              To {activeDirections.destination.name}
+            </div>
+            <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
+              <span className="font-semibold text-sky-300">
+                {activeDirections.route.durationText}
+              </span>
+              <span className="text-slate-500">•</span>
+              <span className="truncate">{activeDirections.route.distanceText}</span>
+            </div>
+          </div>
+          {onClearDirections && (
+            <button
+              type="button"
+              onClick={onClearDirections}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition shrink-0"
+              title="Clear route from map"
+              aria-label="Clear route from map"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Floating Action Button: "Ask AI about this area" */}
       <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 pointer-events-none">

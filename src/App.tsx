@@ -14,6 +14,7 @@ import {
   RolePersonaId,
   GroundingMode,
   MapCoordinates,
+  ActiveDirectionsDisplay,
 } from './types.ts';
 import { MessageSquare, Map as MapIcon, Bookmark, MapPin } from 'lucide-react';
 
@@ -33,7 +34,9 @@ export default function App() {
   const [mapZoom, setMapZoom] = useState<number>(13);
   const [userLocation, setUserLocation] = useState<MapCoordinates | null>(null);
   const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [activeDirections, setActiveDirections] = useState<ActiveDirectionsDisplay | null>(null);
 
   // Chat & AI state
   const [messages, setMessages] = useState<Message[]>([]);
@@ -115,10 +118,11 @@ export default function App() {
   // Request browser geolocation
   const handleRequestUserLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
+      setLocationError('Geolocation is not supported by your browser.');
       return;
     }
     setIsLocating(true);
+    setLocationError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const coords = {
@@ -128,10 +132,16 @@ export default function App() {
         setUserLocation(coords);
         setMapCenter(coords);
         setMapZoom(14);
+        setLocationError(null);
         setIsLocating(false);
       },
       (err) => {
         console.warn('Geolocation access denied or failed:', err);
+        setLocationError(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location permission was denied. Enable location access or use the current map center.'
+            : 'Could not determine your current location. You can retry or use the current map center.'
+        );
         setIsLocating(false);
       },
       { timeout: 10000, enableHighAccuracy: true }
@@ -336,6 +346,8 @@ export default function App() {
               setDrawerInitialTab('saved');
               setIsPlacesDrawerOpen(true);
             }}
+            activeDirections={activeDirections}
+            onClearDirections={() => setActiveDirections(null)}
           />
 
           {/* Floating Discovered / Saved Places Buttons */}
@@ -392,6 +404,12 @@ export default function App() {
             onAskAboutSavedPlaces={handleAskAboutSavedPlaces}
             onReorderSavedPlaces={setSavedPlaces}
             initialTab={drawerInitialTab}
+            userLocation={userLocation}
+            mapCenter={mapCenter}
+            isLocating={isLocating}
+            locationError={locationError}
+            onRequestUserLocation={handleRequestUserLocation}
+            onSelectActiveDirections={setActiveDirections}
           />
         </div>
       </div>

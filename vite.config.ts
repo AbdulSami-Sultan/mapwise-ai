@@ -5,24 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [
-      react(),
-      tailwindcss(),
-      {
-        name: 'api-server-middleware',
-        configureServer(server) {
-          import('./server/apiRouter.ts').then(({ apiRouter }) => {
-            import('express').then((expressModule) => {
-              const express = expressModule.default;
-              server.middlewares.use(express.json() as unknown as import('vite').Connect.NextHandleFunction);
-              server.middlewares.use('/api', ((req, res, next) => {
-                (apiRouter as unknown as (r: unknown, s: unknown, n: unknown) => void)(req, res, next);
-              }) as import('vite').Connect.NextHandleFunction);
-            });
-          });
-        },
-      },
-    ],
+    plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
